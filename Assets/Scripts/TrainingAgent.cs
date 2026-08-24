@@ -283,7 +283,7 @@ public class TrainingAgent : Agent, IPrefab
             && Academy.Instance.EnvironmentParameters.GetWithDefault(
                 ContinuousActionsParameterKey,
                 0f
-            ) > 0.5f;
+            ) > 0f;
 
         return continuous
             ? Mathf.Clamp(action.ContinuousActions[axis], -1f, 1f)
