@@ -13,7 +13,10 @@ using UnityEngine.Events;
 
 /// <summary>
 /// The TrainingAgent class is a subclass of the Agent class in the ML-Agents library.
-/// Actions are currently discrete. 2 branches of 0,1,2, 0,1,2 for forward and rotate respectively.
+/// Actions come in two flavours, picked by the "continuousActions" environment
+/// parameter. Discrete (the default) is 2 branches of 0,1,2 and 0,1,2 for forward
+/// and rotate respectively. Continuous is 2 values in [-1, 1] for the same two
+/// axes, where +/-1 reproduces the discrete branches exactly.
 /// </summary>
 public class TrainingAgent : Agent, IPrefab
 {
@@ -32,8 +35,8 @@ public class TrainingAgent : Agent, IPrefab
     public float quickStopRatio = 0.9f;
     public float rotationSpeed = 100f;
     public float rotationAngle = 0.25f;
-    private int lastActionForward = 0;
-    private int lastActionRotate = 0;
+    private float lastActionForward = 0f;
+    private float lastActionRotate = 0f;
 
     [Header("Agent State / Other Variables")]
     [HideInInspector]
@@ -67,6 +70,10 @@ public class TrainingAgent : Agent, IPrefab
     public bool showNotification = false;
     private TrainingArena _arena;
     private bool _isCountdownActive = false;
+
+    /* Environment parameter (side channel) that switches the agent from the
+       native discrete branches to the continuous controls. */
+    private const string ContinuousActionsParameterKey = "continuousActions";
 
     private CSVWriter _csvWriter;
 
@@ -264,10 +271,39 @@ public class TrainingAgent : Agent, IPrefab
         );
     }
 
+    /// <summary>
+    /// Signed throttle / turn rate in [-1, 1] for one axis. The environment
+    /// parameter "continuousActions" picks which half of the hybrid action
+    /// space is obeyed; the other half is ignored (ML-Agents always sends both).
+    /// </summary>
+    private float ReadAction(ActionBuffers action, int axis)
+    {
+        bool continuous =
+            Academy.IsInitialized
+            && Academy.Instance.EnvironmentParameters.GetWithDefault(
+                ContinuousActionsParameterKey,
+                0f
+            ) > 0.5f;
+
+        return continuous
+            ? Mathf.Clamp(action.ContinuousActions[axis], -1f, 1f)
+            : BranchToSignedAction(action.DiscreteActions[axis]);
+    }
+
+    private static float BranchToSignedAction(int branch)
+    {
+        return branch switch
+        {
+            1 => 1f,
+            2 => -1f,
+            _ => 0f
+        };
+    }
+
     public override void OnActionReceived(ActionBuffers action)
     {
-        lastActionForward = Mathf.FloorToInt(action.DiscreteActions[0]);
-        lastActionRotate = Mathf.FloorToInt(action.DiscreteActions[1]);
+        lastActionForward = ReadAction(action, 0);
+        lastActionRotate = ReadAction(action, 1);
 
         if (!IsMovementFrozen())
         {
@@ -344,29 +380,32 @@ public class TrainingAgent : Agent, IPrefab
         }
     }
 
-    private string DescribeActionForward(int actionForward)
+    private string DescribeActionForward(float actionForward)
     {
-        return actionForward switch
+        return Math.Sign(actionForward) switch
         {
             0 => "No Movement",
             1 => "Move Forward",
-            2 => "Move Backward",
-            _ => "Unknown Forward Action"
+            _ => "Move Backward"
         };
     }
 
-    private string DescribeActionRotate(int actionRotate)
+    private string DescribeActionRotate(float actionRotate)
     {
-        return actionRotate switch
+        return Math.Sign(actionRotate) switch
         {
             0 => "No Rotation",
             1 => "Rotate Right",
-            2 => "Rotate Left",
-            _ => "Unknown Rotation Action"
+            _ => "Rotate Left"
         };
     }
 
-    private void MoveAgent(int actionForward, int actionRotate)
+    /// <summary>
+    /// Drives the agent from signed actions in [-1, 1]. At +/-1 and 0 this is the
+    /// discrete behaviour verbatim: full throttle coasts, no throttle slows down
+    /// faster than drag by quickStopRatio, and everything in between interpolates.
+    /// </summary>
+    private void MoveAgent(float actionForward, float actionRotate)
     {
         if (IsMovementFrozen())
         {
@@ -376,42 +415,20 @@ public class TrainingAgent : Agent, IPrefab
             return;
         }
 
-        Vector3 directionToGo = Vector3.zero;
-        Vector3 rotateDirection = Vector3.zero;
-        Vector3 quickStop = Vector3.zero;
-
         if (_isGrounded)
         {
-            switch (actionForward)
-            {
-                case 1:
-                    directionToGo = transform.forward * 1f;
-                    break;
-                case 2:
-                    directionToGo = transform.forward * -1f;
-                    break;
-                case 0: /* Slow down faster than drag with no input */
-                    quickStop = _rigidBody.linearVelocity * quickStopRatio;
-                    _rigidBody.linearVelocity = quickStop;
-                    break;
-            }
+            _rigidBody.linearVelocity *= Mathf.Lerp(
+                quickStopRatio,
+                1f,
+                Mathf.Abs(actionForward)
+            );
+            _rigidBody.AddForce(
+                transform.forward * actionForward * speed * 100f * Time.fixedDeltaTime,
+                ForceMode.Acceleration
+            );
         }
 
-        switch (actionRotate)
-        {
-            case 1:
-                rotateDirection = transform.up * 1f;
-                break;
-            case 2:
-                rotateDirection = transform.up * -1f;
-                break;
-        }
-
-        transform.Rotate(rotateDirection, Time.fixedDeltaTime * rotationSpeed);
-        _rigidBody.AddForce(
-            directionToGo.normalized * speed * 100f * Time.fixedDeltaTime,
-            ForceMode.Acceleration
-        );
+        transform.Rotate(transform.up, actionRotate * Time.fixedDeltaTime * rotationSpeed);
     }
 
     public override void Heuristic(in ActionBuffers actionsOut)
@@ -435,6 +452,11 @@ public class TrainingAgent : Agent, IPrefab
         {
             discreteActionsOut[1] = 2;
         }
+
+        /* Fill the continuous half too so play mode works in either action mode */
+        var continuousActionsOut = actionsOut.ContinuousActions;
+        continuousActionsOut[0] = BranchToSignedAction(discreteActionsOut[0]);
+        continuousActionsOut[1] = BranchToSignedAction(discreteActionsOut[1]);
     }
 
     public void UpdateHealthNextStep(float updateAmount, bool andCompleteArena = false)
