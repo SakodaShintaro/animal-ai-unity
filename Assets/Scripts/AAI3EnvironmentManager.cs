@@ -49,9 +49,12 @@ public class AAI3EnvironmentManager : MonoBehaviour
     private const int defaultDecisionPeriod = 3;
 
     /* The arena is 40 m square with its local origin at a corner, so an
-       orthographic camera above its centre frames exactly the whole arena. */
-    private const float arenaSizeMetres = 40f;
+       orthographic camera above its center frames exactly the whole arena. */
+    private const float arenaSizeMeters = 40f;
     private const float topDownCameraHeight = 30f;
+
+    [SerializeField]
+    private const int defaultTopDownResolution = 256;
 
     public bool PlayerMode { get; private set; } = true;
 
@@ -92,6 +95,15 @@ public class AAI3EnvironmentManager : MonoBehaviour
         int decisionPeriod = environmentParameters.TryGetValue("decisionPeriod", out paramValue)
             ? paramValue
             : defaultDecisionPeriod;
+        int topDownResolution = environmentParameters.TryGetValue(
+            "topDownResolution",
+            out paramValue
+        )
+            ? paramValue
+            : defaultTopDownResolution;
+        bool topDownCamera =
+            (environmentParameters.TryGetValue("topDownCamera", out paramValue) ? paramValue : 1)
+            > 0;
 
         if (Application.isEditor)
         {
@@ -142,6 +154,10 @@ public class AAI3EnvironmentManager : MonoBehaviour
         }
 
         resolution = Math.Max(minimumResolution, Math.Min(maximumResolution, resolution));
+        topDownResolution = Math.Max(
+            minimumResolution,
+            Math.Min(maximumResolution, topDownResolution)
+        );
         TrainingArena arena = FindAnyObjectByType<TrainingArena>();
 
         InstantiateArenas();
@@ -176,7 +192,10 @@ public class AAI3EnvironmentManager : MonoBehaviour
                     resolution,
                     grayscale
                 );
-                AddTopDownCameraSensor(a, resolution);
+                if (topDownCamera)
+                {
+                    AddTopDownCameraSensor(a, topDownResolution);
+                }
             }
             if (playerMode)
             {
@@ -462,6 +481,9 @@ public class AAI3EnvironmentManager : MonoBehaviour
     /// Adds a second camera sensor looking straight down at the whole arena. It is
     /// there to watch what the agent is doing, not for the agent to act on: the
     /// training side keeps it out of the observation space and only renders it.
+    /// Its resolution is separate from the agent's camera ("--topDownResolution"),
+    /// since only a human ever looks at it, and "--topDownCamera 0" leaves it out
+    /// entirely so a run nobody watches costs what it did before.
     /// </summary>
     public void AddTopDownCameraSensor(Agent agent, int resolution)
     {
@@ -471,15 +493,15 @@ public class AAI3EnvironmentManager : MonoBehaviour
             false
         );
         cameraObject.transform.localPosition = new Vector3(
-            arenaSizeMetres / 2f,
+            arenaSizeMeters / 2f,
             topDownCameraHeight,
-            arenaSizeMetres / 2f
+            arenaSizeMeters / 2f
         );
         cameraObject.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
 
         Camera topDownCamera = cameraObject.AddComponent<Camera>();
         topDownCamera.orthographic = true;
-        topDownCamera.orthographicSize = arenaSizeMetres / 2f;
+        topDownCamera.orthographicSize = arenaSizeMeters / 2f;
         /* The sensor renders it on demand; leaving it on would draw it to the screen too. */
         topDownCamera.enabled = false;
 
@@ -539,6 +561,16 @@ public class AAI3EnvironmentManager : MonoBehaviour
                 case "--decisionPeriod":
                     int dp = (i < args.Length - 1) ? Int32.Parse(args[i + 1]) : 3;
                     environmentParameters.Add("decisionPeriod", dp);
+                    break;
+                case "--topDownCamera":
+                    int tdc = (i < args.Length - 1) ? Int32.Parse(args[i + 1]) : 1;
+                    environmentParameters.Add("topDownCamera", tdc);
+                    break;
+                case "--topDownResolution":
+                    int tdr = (i < args.Length - 1)
+                        ? Int32.Parse(args[i + 1])
+                        : defaultTopDownResolution;
+                    environmentParameters.Add("topDownResolution", tdr);
                     break;
             }
         }

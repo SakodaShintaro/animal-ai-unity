@@ -13,7 +13,7 @@ using UnityEngine.Events;
 
 /// <summary>
 /// The TrainingAgent class is a subclass of the Agent class in the ML-Agents library.
-/// Actions come in two flavours, picked by the "continuousActions" environment
+/// Actions come in two flavors, picked by the "continuousActions" environment
 /// parameter. Discrete (the default) is 2 branches of 0,1,2 and 0,1,2 for forward
 /// and rotate respectively. Continuous is 2 values in [-1, 1] for the same two
 /// axes, where +/-1 reproduces the discrete branches exactly.
@@ -402,7 +402,7 @@ public class TrainingAgent : Agent, IPrefab
 
     /// <summary>
     /// Drives the agent from signed actions in [-1, 1]. At +/-1 and 0 this is the
-    /// discrete behaviour verbatim: full throttle coasts, no throttle slows down
+    /// discrete behavior verbatim: full throttle coasts, no throttle slows down
     /// faster than drag by quickStopRatio, and everything in between interpolates.
     /// </summary>
     private void MoveAgent(float actionForward, float actionRotate)
