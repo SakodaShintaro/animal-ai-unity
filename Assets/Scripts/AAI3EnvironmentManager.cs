@@ -48,6 +48,11 @@ public class AAI3EnvironmentManager : MonoBehaviour
     [SerializeField]
     private const int defaultDecisionPeriod = 3;
 
+    /* The arena is 40 m square with its local origin at a corner, so an
+       orthographic camera above its centre frames exactly the whole arena. */
+    private const float arenaSizeMetres = 40f;
+    private const float topDownCameraHeight = 30f;
+
     public bool PlayerMode { get; private set; } = true;
 
     public ArenasConfigurations _arenasConfigurations;
@@ -171,6 +176,7 @@ public class AAI3EnvironmentManager : MonoBehaviour
                     resolution,
                     grayscale
                 );
+                AddTopDownCameraSensor(a, resolution);
             }
             if (playerMode)
             {
@@ -450,6 +456,40 @@ public class AAI3EnvironmentManager : MonoBehaviour
         cameraSensor.Width = cameraWidth;
         cameraSensor.Height = cameraHeight;
         cameraSensor.Grayscale = grayscale;
+    }
+
+    /// <summary>
+    /// Adds a second camera sensor looking straight down at the whole arena. It is
+    /// there to watch what the agent is doing, not for the agent to act on: the
+    /// training side keeps it out of the observation space and only renders it.
+    /// </summary>
+    public void AddTopDownCameraSensor(Agent agent, int resolution)
+    {
+        GameObject cameraObject = new GameObject("TopDownCamera");
+        cameraObject.transform.SetParent(
+            agent.GetComponentInParent<TrainingArena>().transform,
+            false
+        );
+        cameraObject.transform.localPosition = new Vector3(
+            arenaSizeMetres / 2f,
+            topDownCameraHeight,
+            arenaSizeMetres / 2f
+        );
+        cameraObject.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+
+        Camera topDownCamera = cameraObject.AddComponent<Camera>();
+        topDownCamera.orthographic = true;
+        topDownCamera.orthographicSize = arenaSizeMetres / 2f;
+        /* The sensor renders it on demand; leaving it on would draw it to the screen too. */
+        topDownCamera.enabled = false;
+
+        CameraSensorComponent sensor = agent.gameObject.AddComponent<CameraSensorComponent>();
+        sensor.Camera = topDownCamera;
+        /* ML-Agents sorts an agent's sensors by name, so this one lands between
+           "CameraSensor" and the agent's own "VectorSensor". */
+        sensor.SensorName = "TopDownCameraSensor";
+        sensor.Width = resolution;
+        sensor.Height = resolution;
     }
 
     public Dictionary<string, int> RetrieveEnvironmentParameters(string[] args = null)
