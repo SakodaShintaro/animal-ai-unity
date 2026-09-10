@@ -56,6 +56,17 @@ public class AAI3EnvironmentManager : MonoBehaviour
     [SerializeField]
     private const int defaultTopDownResolution = 256;
 
+    /* One color per outer wall, in WallOut1..WallOut4 order. Those face +x, -z,
+       -x and +z in arena coordinates, so an agent that sees a wall knows which
+       side of the arena it is looking at ("--coloredWalls 1"). */
+    private static readonly Color[] outerWallColors = new Color[]
+    {
+        new Color(0.85f, 0.20f, 0.20f),
+        new Color(0.20f, 0.45f, 0.85f),
+        new Color(0.95f, 0.80f, 0.15f),
+        new Color(0.25f, 0.70f, 0.35f),
+    };
+
     public bool PlayerMode { get; private set; } = true;
 
     public ArenasConfigurations _arenasConfigurations;
@@ -103,6 +114,9 @@ public class AAI3EnvironmentManager : MonoBehaviour
             : defaultTopDownResolution;
         bool topDownCamera =
             (environmentParameters.TryGetValue("topDownCamera", out paramValue) ? paramValue : 1)
+            > 0;
+        bool coloredWalls =
+            (environmentParameters.TryGetValue("coloredWalls", out paramValue) ? paramValue : 0)
             > 0;
 
         if (Application.isEditor)
@@ -161,6 +175,11 @@ public class AAI3EnvironmentManager : MonoBehaviour
         TrainingArena arena = FindAnyObjectByType<TrainingArena>();
 
         InstantiateArenas();
+
+        if (coloredWalls)
+        {
+            ColorOuterWalls(_instantiatedArena);
+        }
 
         playerControls.SetActive(playerMode);
         uiCanvas.GetComponent<Canvas>().enabled = playerMode;
@@ -514,6 +533,27 @@ public class AAI3EnvironmentManager : MonoBehaviour
         sensor.Height = resolution;
     }
 
+    /// <summary>
+    /// Tints each of the four outer walls a different color, so that a view of a
+    /// wall tells the agent which way it is facing. The four walls share one
+    /// fence material, so the color goes on through a property block rather than
+    /// on the material itself, leaving the shared asset untouched.
+    /// </summary>
+    public void ColorOuterWalls(TrainingArena arena)
+    {
+        MaterialPropertyBlock block = new MaterialPropertyBlock();
+        for (int i = 0; i < outerWallColors.Length; i++)
+        {
+            block.SetColor("_BaseColor", outerWallColors[i]);
+            block.SetColor("_Color", outerWallColors[i]);
+            Transform wall = arena.transform.Find($"Walls/WallOut{i + 1}");
+            foreach (Renderer renderer in wall.GetComponentsInChildren<Renderer>())
+            {
+                renderer.SetPropertyBlock(block);
+            }
+        }
+    }
+
     public Dictionary<string, int> RetrieveEnvironmentParameters(string[] args = null)
     {
         Dictionary<string, int> environmentParameters = new Dictionary<string, int>();
@@ -561,6 +601,10 @@ public class AAI3EnvironmentManager : MonoBehaviour
                 case "--decisionPeriod":
                     int dp = (i < args.Length - 1) ? Int32.Parse(args[i + 1]) : 3;
                     environmentParameters.Add("decisionPeriod", dp);
+                    break;
+                case "--coloredWalls":
+                    int cw = (i < args.Length - 1) ? Int32.Parse(args[i + 1]) : 0;
+                    environmentParameters.Add("coloredWalls", cw);
                     break;
                 case "--topDownCamera":
                     int tdc = (i < args.Length - 1) ? Int32.Parse(args[i + 1]) : 1;
