@@ -241,6 +241,7 @@ public class TrainingAgent : Agent, IPrefab
         sensor.AddObservation(localVel);
         Vector3 localPos = transform.position;
         sensor.AddObservation(localPos);
+        sensor.AddObservation(transform.eulerAngles);
         bool wasAgentFrozen = IsMovementFrozen();
 
         string actionForwardDescription = DescribeActionForward(lastActionForward);
